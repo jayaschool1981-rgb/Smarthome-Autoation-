@@ -28,13 +28,15 @@ if (!JWT_SECRET) {
 // Security headers
 app.use(helmet());
 
-// Rate limiter (prevents brute force attacks)
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
-  message: "Too many requests, please try again later.",
-});
-app.use(limiter);
+// Rate limiting (protects against brute-force attacks)
+app.use(
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+  })
+);
 
 // Body parser
 app.use(express.json({ limit: "10kb" }));
@@ -54,15 +56,19 @@ app.use(
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        callback(new Error("Not allowed by CORS"));
+        callback(new Error("❌ Not allowed by CORS"));
       }
     },
+    methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
   })
 );
 
+// Handle preflight requests properly
+app.options("*", cors());
+
 /* =========================
-   MOCK DATABASE (TEMP ONLY)
+   MOCK DATABASE (TEMP)
    ⚠ Replace with MongoDB later
 ========================= */
 
@@ -80,7 +86,6 @@ let devices = [
 app.get("/", (req, res) => {
   res.status(200).json({
     message: "SmartHome API Running 🚀",
-    status: "OK",
     environment: process.env.NODE_ENV || "development",
     timestamp: new Date(),
   });
@@ -116,9 +121,7 @@ app.post("/api/register", async (req, res) => {
 
     users.push(newUser);
 
-    res.status(201).json({
-      message: "Registration successful",
-    });
+    res.status(201).json({ message: "Registration successful" });
   } catch (error) {
     console.error("Register Error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -141,10 +144,7 @@ app.post("/api/login", async (req, res) => {
     }
 
     const token = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-      },
+      { id: user.id, email: user.email },
       JWT_SECRET,
       { expiresIn: "1h" }
     );
@@ -181,7 +181,7 @@ const verifyToken = (req, res, next) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
     next();
-  } catch (error) {
+  } catch {
     return res.status(401).json({ error: "Invalid or expired token" });
   }
 };
@@ -216,7 +216,9 @@ app.post("/api/toggle/:id", verifyToken, (req, res) => {
 
 app.use((err, req, res, next) => {
   console.error("Unhandled Error:", err.message);
-  res.status(500).json({ error: "Something went wrong" });
+  res.status(500).json({
+    error: "Something went wrong",
+  });
 });
 
 /* =========================
@@ -226,5 +228,3 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
-
-
