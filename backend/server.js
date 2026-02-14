@@ -3,6 +3,7 @@ const cors = require("cors");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 require("dotenv").config();
 
 const app = express();
@@ -13,6 +14,7 @@ const app = express();
 
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET;
+const FRONTEND_URL = process.env.FRONTEND_URL;
 
 if (!JWT_SECRET) {
   console.error("❌ JWT_SECRET is missing in environment variables");
@@ -20,27 +22,48 @@ if (!JWT_SECRET) {
 }
 
 /* =========================
-   MIDDLEWARE
+   SECURITY MIDDLEWARE
 ========================= */
 
 // Security headers
 app.use(helmet());
 
-// CORS configuration (replace with your frontend URL)
+// Rate limiter (prevents brute force attacks)
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
+  message: "Too many requests, please try again later.",
+});
+app.use(limiter);
+
+// Body parser
+app.use(express.json({ limit: "10kb" }));
+
+/* =========================
+   CORS CONFIGURATION
+========================= */
+
+const allowedOrigins = [
+  "http://localhost:5173",
+  FRONTEND_URL,
+];
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "*",
-    methods: ["GET", "POST"],
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
   })
 );
 
-// Body parser with size limit
-app.use(express.json({ limit: "10kb" }));
-
 /* =========================
-   MOCK DATABASE (TEMP)
-   ⚠ Replace with real DB later
+   MOCK DATABASE (TEMP ONLY)
+   ⚠ Replace with MongoDB later
 ========================= */
 
 let users = [];
@@ -58,6 +81,7 @@ app.get("/", (req, res) => {
   res.status(200).json({
     message: "SmartHome API Running 🚀",
     status: "OK",
+    environment: process.env.NODE_ENV || "development",
     timestamp: new Date(),
   });
 });
@@ -141,7 +165,7 @@ app.post("/api/login", async (req, res) => {
 });
 
 /* =========================
-   JWT MIDDLEWARE
+   JWT AUTH MIDDLEWARE
 ========================= */
 
 const verifyToken = (req, res, next) => {
@@ -163,7 +187,7 @@ const verifyToken = (req, res, next) => {
 };
 
 /* =========================
-   PROTECTED DEVICE ROUTES
+   PROTECTED ROUTES
 ========================= */
 
 app.get("/api/devices", verifyToken, (req, res) => {
@@ -173,16 +197,12 @@ app.get("/api/devices", verifyToken, (req, res) => {
 app.post("/api/toggle/:id", verifyToken, (req, res) => {
   const id = parseInt(req.params.id);
 
-  const deviceExists = devices.find((d) => d.id === id);
-  if (!deviceExists) {
+  const device = devices.find((d) => d.id === id);
+  if (!device) {
     return res.status(404).json({ error: "Device not found" });
   }
 
-  devices = devices.map((device) =>
-    device.id === id
-      ? { ...device, status: !device.status }
-      : device
-  );
+  device.status = !device.status;
 
   res.status(200).json({
     message: "Device status updated",
@@ -195,7 +215,7 @@ app.post("/api/toggle/:id", verifyToken, (req, res) => {
 ========================= */
 
 app.use((err, req, res, next) => {
-  console.error("Unhandled Error:", err);
+  console.error("Unhandled Error:", err.message);
   res.status(500).json({ error: "Something went wrong" });
 });
 
@@ -206,3 +226,5 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
+
+
