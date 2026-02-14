@@ -11,7 +11,7 @@ export default function Login({ setIsLoggedIn }) {
 
   const handleLogin = async () => {
   try {
-    const res = await fetch("http://localhost:5000/api/login", {
+    const res = await fetch("https://smarthome-backend-p7pc.onrender.com/api/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
@@ -46,7 +46,7 @@ export default function Login({ setIsLoggedIn }) {
     try {
       setLoading(true);
 
-      const res = await fetch("http://localhost:5000/api/register", {
+      const res = await fetch("https://smarthome-backend-p7pc.onrender.com/api/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, password }),

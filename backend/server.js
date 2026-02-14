@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const helmet = require("helmet");
 require("dotenv").config();
 
 const app = express();
@@ -11,23 +12,35 @@ const app = express();
 ========================= */
 
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || "devsecret";
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  console.error("❌ JWT_SECRET is missing in environment variables");
+  process.exit(1);
+}
 
 /* =========================
    MIDDLEWARE
 ========================= */
 
+// Security headers
+app.use(helmet());
+
+// CORS configuration (replace with your frontend URL)
 app.use(
   cors({
-    origin: "*", // change to frontend URL after deployment
+    origin: process.env.FRONTEND_URL || "*",
     methods: ["GET", "POST"],
+    credentials: true,
   })
 );
 
-app.use(express.json());
+// Body parser with size limit
+app.use(express.json({ limit: "10kb" }));
 
 /* =========================
    MOCK DATABASE (TEMP)
+   ⚠ Replace with real DB later
 ========================= */
 
 let users = [];
@@ -45,6 +58,7 @@ app.get("/", (req, res) => {
   res.status(200).json({
     message: "SmartHome API Running 🚀",
     status: "OK",
+    timestamp: new Date(),
   });
 });
 
@@ -58,21 +72,22 @@ app.post("/api/register", async (req, res) => {
     const { name, email, password } = req.body;
 
     if (!name || !email || !password) {
-      return res.status(400).json({ error: "All fields required" });
+      return res.status(400).json({ error: "All fields are required" });
     }
 
     const existingUser = users.find((u) => u.email === email);
     if (existingUser) {
-      return res.status(400).json({ error: "User already exists" });
+      return res.status(409).json({ error: "User already exists" });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 12);
 
     const newUser = {
       id: users.length + 1,
       name,
       email,
       password: hashedPassword,
+      createdAt: new Date(),
     };
 
     users.push(newUser);
@@ -80,8 +95,9 @@ app.post("/api/register", async (req, res) => {
     res.status(201).json({
       message: "Registration successful",
     });
-  } catch (err) {
-    res.status(500).json({ error: "Server error" });
+  } catch (error) {
+    console.error("Register Error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -101,17 +117,26 @@ app.post("/api/login", async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, email: user.email },
+      {
+        id: user.id,
+        email: user.email,
+      },
       JWT_SECRET,
       { expiresIn: "1h" }
     );
 
-    res.json({
+    res.status(200).json({
       message: "Login successful",
       token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+      },
     });
-  } catch (err) {
-    res.status(500).json({ error: "Server error" });
+  } catch (error) {
+    console.error("Login Error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -122,7 +147,7 @@ app.post("/api/login", async (req, res) => {
 const verifyToken = (req, res, next) => {
   const authHeader = req.headers.authorization;
 
-  if (!authHeader) {
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(403).json({ error: "Access denied" });
   }
 
@@ -132,7 +157,7 @@ const verifyToken = (req, res, next) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
     next();
-  } catch (err) {
+  } catch (error) {
     return res.status(401).json({ error: "Invalid or expired token" });
   }
 };
@@ -142,11 +167,16 @@ const verifyToken = (req, res, next) => {
 ========================= */
 
 app.get("/api/devices", verifyToken, (req, res) => {
-  res.json(devices);
+  res.status(200).json(devices);
 });
 
 app.post("/api/toggle/:id", verifyToken, (req, res) => {
   const id = parseInt(req.params.id);
+
+  const deviceExists = devices.find((d) => d.id === id);
+  if (!deviceExists) {
+    return res.status(404).json({ error: "Device not found" });
+  }
 
   devices = devices.map((device) =>
     device.id === id
@@ -154,7 +184,19 @@ app.post("/api/toggle/:id", verifyToken, (req, res) => {
       : device
   );
 
-  res.json(devices);
+  res.status(200).json({
+    message: "Device status updated",
+    devices,
+  });
+});
+
+/* =========================
+   GLOBAL ERROR HANDLER
+========================= */
+
+app.use((err, req, res, next) => {
+  console.error("Unhandled Error:", err);
+  res.status(500).json({ error: "Something went wrong" });
 });
 
 /* =========================
