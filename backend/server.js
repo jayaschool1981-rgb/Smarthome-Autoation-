@@ -28,7 +28,7 @@ if (!JWT_SECRET) {
 // Security headers
 app.use(helmet());
 
-// Rate limiting (protects against brute-force attacks)
+// Rate limiting
 app.use(
   rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -38,7 +38,7 @@ app.use(
   })
 );
 
-// Body parser
+// JSON body parser
 app.use(express.json({ limit: "10kb" }));
 
 /* =========================
@@ -48,12 +48,14 @@ app.use(express.json({ limit: "10kb" }));
 const allowedOrigins = [
   "http://localhost:5173",
   FRONTEND_URL,
-];
+].filter(Boolean);
 
 app.use(
   cors({
     origin: function (origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (!origin) return callback(null, true); // allow server-to-server
+
+      if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
         callback(new Error("❌ Not allowed by CORS"));
@@ -63,9 +65,6 @@ app.use(
     credentials: true,
   })
 );
-
-// Handle preflight requests properly
-app.options("*", cors());
 
 /* =========================
    MOCK DATABASE (TEMP)
@@ -181,7 +180,7 @@ const verifyToken = (req, res, next) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
     next();
-  } catch {
+  } catch (error) {
     return res.status(401).json({ error: "Invalid or expired token" });
   }
 };
@@ -216,9 +215,7 @@ app.post("/api/toggle/:id", verifyToken, (req, res) => {
 
 app.use((err, req, res, next) => {
   console.error("Unhandled Error:", err.message);
-  res.status(500).json({
-    error: "Something went wrong",
-  });
+  res.status(500).json({ error: "Something went wrong" });
 });
 
 /* =========================
