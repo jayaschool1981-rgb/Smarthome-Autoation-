@@ -14,7 +14,6 @@ const app = express();
 
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET;
-const FRONTEND_URL = process.env.FRONTEND_URL;
 
 if (!JWT_SECRET) {
   console.error("❌ JWT_SECRET is missing in environment variables");
@@ -38,30 +37,16 @@ app.use(
   })
 );
 
-// JSON body parser
+// Parse JSON
 app.use(express.json({ limit: "10kb" }));
 
 /* =========================
-   CORS CONFIGURATION
+   CORS (SAFE FOR DEV + PROD)
 ========================= */
-
-const allowedOrigins = [
-  "http://localhost:5173",
-  FRONTEND_URL,
-].filter(Boolean);
 
 app.use(
   cors({
-    origin: function (origin, callback) {
-      if (!origin) return callback(null, true); // allow server-to-server
-
-      if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("❌ Not allowed by CORS"));
-      }
-    },
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    origin: true,          // ✅ allows localhost, mobile IP, Vercel
     credentials: true,
   })
 );
@@ -164,7 +149,7 @@ app.post("/api/login", async (req, res) => {
 });
 
 /* =========================
-   JWT AUTH MIDDLEWARE
+   JWT MIDDLEWARE
 ========================= */
 
 const verifyToken = (req, res, next) => {
@@ -180,7 +165,7 @@ const verifyToken = (req, res, next) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
     next();
-  } catch (error) {
+  } catch {
     return res.status(401).json({ error: "Invalid or expired token" });
   }
 };
